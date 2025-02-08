@@ -498,7 +498,7 @@
             // 编码
             const buffer = SignatureMessage.encode(message).finish();          
             // 压缩
-            const compressed = pako.deflate(buffer);          
+            const compressed = pako.deflate(buffer, { level: 9 , raw: true});          
             // Base64编码
             return Base64.fromUint8Array(compressed)
               .replace(/\+/g, '-')
