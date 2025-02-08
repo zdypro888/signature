@@ -3,8 +3,8 @@
 
 <head>
   <meta charset="UTF-8">
-  <!-- 设置 viewport，并增加 viewport-fit=cover 以充分利用屏幕空间 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- 优化视口设置 -->
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6c5ce7">
   <title>智能签名系统</title>
   <!-- Telegram Web App JS，用于 Telegram mini app 环境 -->
@@ -26,6 +26,8 @@
     html {
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
+      height: 100vh;
+      height: -webkit-fill-available;
     }
 
     *,
@@ -37,13 +39,20 @@
     /* 全局重置与防止滚动 */
     html,
     body {
-      height: 100%;
+      height: 100vh;
+      height: -webkit-fill-available;
       margin: 0;
       padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
       overflow: hidden;
       overscroll-behavior: none;
       background: var(--background-gradient);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      position: fixed;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
     }
 
     /* 居中容器 */
@@ -60,10 +69,14 @@
       box-shadow: var(--shadow);
       width: 90%;
       max-width: 600px;
+      margin: auto;
       padding: 20px;
       text-align: center;
       position: relative;
       animation: fadeIn 0.3s ease-out;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
     }
 
     @keyframes fadeIn {
@@ -87,12 +100,15 @@
 
     /* 签名画板区域 */
     .canvas-container {
+      flex: 1;
+      min-height: 0;
       margin: 20px 0;
       border: 2px solid #eee;
       border-radius: calc(var(--border-radius) - 4px);
       overflow: hidden;
       background: #ffffff;
       position: relative;
+      touch-action: none;
     }
 
     .canvas-container::before {
@@ -109,7 +125,7 @@
 
     canvas {
       width: 100%;
-      height: auto;
+      height: 100%;
       touch-action: none;
       display: block;
       background: #ffffff;
@@ -319,32 +335,43 @@
         let lastTime = 0;
         const THROTTLE_MS = 16; // ~60fps
 
-        // 初始化 Telegram WebApp
+        // 修改初始化 Telegram WebApp 函数
         function initTelegramWebApp() {
           if (window.Telegram?.WebApp) {
             Telegram.WebApp.ready();
+            // 展开 WebApp 窗口
+            Telegram.WebApp.expand();
+            
             // 设置主题颜色
             const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
             Telegram.WebApp.setHeaderColor(isDarkMode ? '#1a1a1a' : '#ffffff');
             Telegram.WebApp.setBackgroundColor(isDarkMode ? '#000000' : '#ffffff');
+            
+            // 禁用页面滚动
+            document.body.style.height = window.innerHeight + 'px';
+            
+            // 监听视口大小变化
+            Telegram.WebApp.onEvent('viewportChanged', function() {
+              document.body.style.height = window.innerHeight + 'px';
+              resizeCanvas();
+            });
           }
         }
 
-        // 优化的 Canvas 大小调整
+        // 优化的 Canvas 大小调整函数
         function resizeCanvas() {
           const dpr = window.devicePixelRatio || 1;
           const containerWidth = canvas.parentElement.clientWidth;
+          const containerHeight = canvas.parentElement.clientHeight;
           const displayWidth = containerWidth;
-          const displayHeight = containerWidth * 0.625;
+          const displayHeight = containerHeight;
 
           canvas.style.width = `${displayWidth}px`;
           canvas.style.height = `${displayHeight}px`;
           canvas.width = displayWidth * dpr;
           canvas.height = displayHeight * dpr;
 
-          // 重置变换矩阵，避免缩放累积
           ctx.setTransform(1, 0, 0, 1, 0, 0);
-          // 应用设备像素比缩放
           ctx.scale(dpr, dpr);
 
           scheduleRedraw();
@@ -571,6 +598,15 @@
 
         window.addEventListener('resize', resizeCanvas);
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', initTelegramWebApp);
+
+        // 阻止默认的触摸行为
+        document.addEventListener('touchmove', function(e) {
+          e.preventDefault();
+        }, { passive: false });
+
+        document.addEventListener('touchstart', function(e) {
+          e.preventDefault();
+        }, { passive: false });
 
         // 初始化
         Promise.all([
