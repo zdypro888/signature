@@ -346,7 +346,7 @@
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           // 应用设备像素比缩放
           ctx.scale(dpr, dpr);
-          
+
           scheduleRedraw();
         }
 
@@ -494,11 +494,11 @@
             const errMsg = SignatureMessage.verify(protoData);
             if (errMsg) throw Error(errMsg);
             // 创建消息实例
-            const message = SignatureMessage.create(protoData);          
+            const message = SignatureMessage.create(protoData);
             // 编码
-            const buffer = SignatureMessage.encode(message).finish();          
+            const buffer = SignatureMessage.encode(message).finish();
             // 压缩
-            const compressed = pako.deflate(buffer, { level: 9 , raw: true});          
+            const compressed = pako.deflate(buffer, { level: 9, raw: true });
             // Base64编码
             return Base64.fromUint8Array(compressed)
               .replace(/\+/g, '-')
@@ -522,14 +522,18 @@
             const initData = Telegram.WebApp.initData;
             const params = new URLSearchParams(initData);
             const deviceId = params.get("device_id");
-
+            if (!deviceId) {
+              const queryString = window.location.search;
+              const params = new URLSearchParams(queryString);
+              deviceId = params.get("device_id");
+            }
             const signatureData = {
               device_id: deviceId,
               trajectories: trajectories
             };
 
             const compressedData = compressData(signatureData);
-            
+
             // 检查数据大小
             if (compressedData.length > 4096) {
               showFeedback('签名过于复杂，请简化后重试', 'error');
