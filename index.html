@@ -5,24 +5,47 @@
   <meta charset="UTF-8">
   <!-- 设置 viewport，并增加 viewport-fit=cover 以充分利用屏幕空间 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#6c5ce7">
   <title>智能签名系统</title>
   <!-- Telegram Web App JS，用于 Telegram mini app 环境 -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <!-- 引入 pako 库 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js" defer></script>
   <!-- 引入 js-base64 库 -->
-  <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.7/base64.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.7/base64.min.js" defer></script>
+  <!-- 引入 protobuf.js -->
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.4/dist/protobuf.min.js" defer></script>
   <style>
+    :root {
+      --primary-color: #6c5ce7;
+      --error-color: #ff6b6b;
+      --success-color: #00b894;
+      --background-gradient: linear-gradient(135deg, #a8e063, #56ab2f);
+      --border-radius: 16px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+
+    html {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    *,
+    *:before,
+    *:after {
+      box-sizing: inherit;
+    }
+
     /* 全局重置与防止滚动 */
     html,
     body {
       height: 100%;
       margin: 0;
-      padding: 0;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
       overflow: hidden;
       overscroll-behavior: none;
-      background: linear-gradient(135deg, #a8e063, #56ab2f);
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--background-gradient);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
 
     /* 居中容器 */
@@ -35,18 +58,31 @@
     /* 卡片式容器 */
     .container {
       background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
       width: 90%;
       max-width: 600px;
       padding: 20px;
       text-align: center;
       position: relative;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .container h2 {
-      margin-top: 0;
-      color: #333;
+      margin: 0 0 20px;
+      color: var(--primary-color);
       font-size: 26px;
       font-weight: 600;
     }
@@ -54,10 +90,23 @@
     /* 签名画板区域 */
     .canvas-container {
       margin: 20px 0;
-      border: 1px solid #ddd;
-      border-radius: 12px;
+      border: 2px solid #eee;
+      border-radius: calc(var(--border-radius) - 4px);
       overflow: hidden;
       background: #fafafa;
+      position: relative;
+    }
+
+    .canvas-container::before {
+      content: "在此处签名";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #ccc;
+      font-size: 18px;
+      pointer-events: none;
+      opacity: 0.8;
     }
 
     canvas {
@@ -75,59 +124,80 @@
       gap: 15px;
     }
 
-    .buttons button {
+    .button {
       padding: 12px 24px;
       font-size: 16px;
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      transition: background 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+    }
+
+    .button::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: width 0.3s, height 0.3s;
+    }
+
+    .button:active::after {
+      width: 200px;
+      height: 200px;
     }
 
     #clearButton {
-      background: #ff6b6b;
-      color: #fff;
-    }
-
-    #clearButton:hover {
-      background: #ff5252;
+      background: var(--error-color);
     }
 
     #sendButton {
-      background: #6c5ce7;
-      color: #fff;
+      background: var(--primary-color);
     }
 
-    #sendButton:hover {
-      background: #5f3dc4;
+    .button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
     /* 反馈提示 */
     .feedback {
       position: fixed;
       top: 20px;
-      right: 20px;
-      padding: 12px 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-100%);
+      padding: 12px 24px;
       border-radius: 8px;
       color: #fff;
-      font-weight: bold;
+      font-weight: 500;
       opacity: 0;
-      transform: translateX(100%);
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      min-width: 200px;
     }
 
     .feedback.show {
+      transform: translateX(-50%) translateY(0);
       opacity: 1;
-      transform: translateX(0);
     }
 
     .feedback.success {
-      background: #00b894;
+      background: var(--success-color);
     }
 
     .feedback.error {
-      background: #d63031;
+      background: var(--error-color);
     }
 
     /* 状态提示 */
@@ -135,6 +205,7 @@
       margin-top: 10px;
       color: #666;
       font-size: 14px;
+      min-height: 20px;
     }
 
     /* 调试日志（生产环境可隐藏） */
@@ -151,6 +222,33 @@
       box-sizing: border-box;
       display: none;
     }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background-gradient: linear-gradient(135deg, #2d3436, #000000);
+      }
+
+      .container {
+        background: #1a1a1a;
+      }
+
+      .container h2 {
+        color: #fff;
+      }
+
+      .canvas-container {
+        border-color: #333;
+        background: #222;
+      }
+
+      .canvas-container::before {
+        color: #666;
+      }
+
+      .status-indicator {
+        color: #999;
+      }
+    }
   </style>
 </head>
 
@@ -161,8 +259,8 @@
       <canvas id="signatureCanvas"></canvas>
     </div>
     <div class="buttons">
-      <button id="clearButton">清除</button>
-      <button id="sendButton">发送轨迹</button>
+      <button id="clearButton" class="button">清除</button>
+      <button id="sendButton" class="button">发送签名</button>
     </div>
     <div class="status-indicator" id="statusIndicator"></div>
   </div>
@@ -171,205 +269,314 @@
   <div id="debugLog"></div>
 
   <script>
-    /********************
-     * 签名绘制相关代码
-     ********************/
-    const canvas = document.getElementById('signatureCanvas');
-    const ctx = canvas.getContext('2d');
+    // 使用立即执行函数避免全局变量污染
+    (() => {
+      // 定义 protobuf 消息格式
+      const SignatureProto = `
+        syntax = "proto3";
+        
+        message Point {
+          float x = 1;
+          float y = 2;
+          float p = 3;
+        }
+        
+        message Stroke {
+          repeated Point points = 1;
+        }
+        
+        message Signature {
+          string d = 1;  // device_id
+          repeated Stroke s = 2;  // strokes
+        }
+      `;
 
-    // 保存所有笔画（每笔为一系列点）
-    let trajectories = [];
-    let currentStroke = [];
-    let drawing = false;
-    let needsRedraw = false;
+      let root = null;
+      let SignatureMessage = null;
 
-    // 根据容器宽度自适应调整 canvas 尺寸（采用 16:10 比例）
-    function resizeCanvas() {
-      const containerWidth = canvas.parentElement.clientWidth;
-      canvas.width = containerWidth;
-      canvas.height = containerWidth * 0.625;
-      scheduleRedraw();
-    }
-    window.addEventListener('resize', resizeCanvas);
-    document.addEventListener('DOMContentLoaded', resizeCanvas);
-
-    // 利用 requestAnimationFrame 节流重绘
-    function scheduleRedraw() {
-      if (!needsRedraw) {
-        needsRedraw = true;
-        requestAnimationFrame(() => {
-          redraw();
-          needsRedraw = false;
-        });
+      // 初始化 protobuf
+      async function initProtobuf() {
+        try {
+          root = await protobuf.parse(SignatureProto).root;
+          SignatureMessage = root.lookupType("Signature");
+        } catch (e) {
+          console.error('Protobuf 初始化失败:', e);
+        }
       }
-    }
 
-    // 获取 canvas 内坐标，并附加时间戳
-    function getCanvasCoords(evt) {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: evt.clientX - rect.left,
-        y: evt.clientY - rect.top,
-        time: Date.now()
-      };
-    }
-
-    // 重绘所有笔画：清空画布后重绘已完成和当前笔画
-    function redraw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#333';
-
-      trajectories.forEach(stroke => drawStroke(stroke));
-      if (currentStroke.length > 0) {
-        drawStroke(currentStroke);
-      }
-    }
-
-    // 利用贝塞尔曲线平滑绘制笔画
-    function drawStroke(stroke) {
-      if (!stroke || stroke.length === 0) return;
-      if (stroke.length < 2) {
-        const p = stroke[0];
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, ctx.lineWidth / 2, 0, Math.PI * 2);
-        ctx.fill();
-        return;
-      }
-      ctx.beginPath();
-      ctx.moveTo(stroke[0].x, stroke[0].y);
-      for (let i = 0; i < stroke.length - 1; i++) {
-        const p0 = (i === 0) ? stroke[0] : stroke[i - 1];
-        const p1 = stroke[i];
-        const p2 = stroke[i + 1];
-        const p3 = (i + 2 < stroke.length) ? stroke[i + 2] : p2;
-        const cp1 = {
-          x: p1.x + (p2.x - p0.x) / 6,
-          y: p1.y + (p2.y - p0.y) / 6
-        };
-        const cp2 = {
-          x: p2.x - (p3.x - p1.x) / 6,
-          y: p2.y - (p3.y - p1.y) / 6
-        };
-        ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
-      }
-      ctx.stroke();
-    }
-
-    // 开始绘制：记录第一个点
-    function startDrawing(evt) {
-      evt.preventDefault();
-      drawing = true;
-      currentStroke = [];
-      currentStroke.push(getCanvasCoords(evt));
-      scheduleRedraw();
-    }
-
-    // 绘制过程中记录点
-    function continueDrawing(evt) {
-      if (!drawing) return;
-      evt.preventDefault();
-      currentStroke.push(getCanvasCoords(evt));
-      scheduleRedraw();
-    }
-
-    // 结束绘制：保存当前笔画，并重置状态
-    function endDrawing(evt) {
-      if (!drawing) return;
-      evt.preventDefault();
-      drawing = false;
-      trajectories.push(currentStroke);
-      currentStroke = [];
-      scheduleRedraw();
-    }
-
-    // 绑定 Pointer 事件（支持鼠标、触摸及手写笔）
-    canvas.addEventListener('pointerdown', startDrawing);
-    canvas.addEventListener('pointermove', continueDrawing);
-    canvas.addEventListener('pointerup', endDrawing);
-    canvas.addEventListener('pointercancel', endDrawing);
-    canvas.addEventListener('pointerleave', endDrawing);
-
-    /********************
-     * 反馈与调试
-     ********************/
-    function showFeedback(message, type) {
+      const canvas = document.getElementById('signatureCanvas');
+      const ctx = canvas.getContext('2d');
       const feedback = document.getElementById('feedback');
       const statusIndicator = document.getElementById('statusIndicator');
-      feedback.textContent = message;
-      feedback.className = `feedback ${type} show`;
-      statusIndicator.textContent = message;
-      setTimeout(() => {
-        feedback.classList.remove('show');
-        if (type === 'error') {
-          statusIndicator.textContent = '';
+      const clearButton = document.getElementById('clearButton');
+      const sendButton = document.getElementById('sendButton');
+
+      let trajectories = [];
+      let currentStroke = [];
+      let drawing = false;
+      let needsRedraw = false;
+      let lastPoint = null;
+      let lastTime = 0;
+      const THROTTLE_MS = 16; // ~60fps
+
+      // 初始化 Telegram WebApp
+      function initTelegramWebApp() {
+        if (window.Telegram?.WebApp) {
+          Telegram.WebApp.ready();
+          // 设置主题颜色
+          const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          Telegram.WebApp.setHeaderColor(isDarkMode ? '#1a1a1a' : '#ffffff');
+          Telegram.WebApp.setBackgroundColor(isDarkMode ? '#000000' : '#ffffff');
         }
-      }, 3000);
-    }
-
-    function logError(msg) {
-      const debugLog = document.getElementById("debugLog");
-      if (debugLog) {
-        debugLog.textContent = msg;
       }
-    }
 
-    /********************
-     * 按钮功能
-     ********************/
-    // 清除按钮：清空画板及签名数据
-    document.getElementById('clearButton').addEventListener('click', () => {
-      trajectories = [];
-      currentStroke = [];
-      redraw();
-      document.getElementById('statusIndicator').textContent = '画板已清空';
-    });
+      // 优化的 Canvas 大小调整
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const containerWidth = canvas.parentElement.clientWidth;
+        const displayWidth = containerWidth;
+        const displayHeight = containerWidth * 0.625;
 
-    /**
-     * 使用 pako 和 js‑base64 对数据进行压缩，
-     * 并将结果转换为 URL 安全的 Base64 字符串
-     * @param {Object} data - 要压缩的数据对象
-     * @returns {String} URL 安全的 Base64 压缩字符串
-     */
-    function compressData(data) {
-      // 将数据转换为 JSON 字符串
-      var jsonData = JSON.stringify(data);
-      // 使用 pako.deflate 将 JSON 压缩为二进制字符串
-      var compressedStr = pako.deflate(jsonData, { to: 'string' });
-      // 用 js‑base64 进行 Base64 编码
-      var base64Str = Base64.encode(compressedStr);
-      // 转换为 URL 安全的 Base64 格式：替换 "+" 为 "-"， "/" 为 "_"，并移除末尾 "="
-      return base64Str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.width = displayWidth * dpr;
+        canvas.height = displayHeight * dpr;
 
-    // 发送按钮：将签名数据通过 Telegram API 发送给 Bot 服务端
-    function sendDataToBot() {
-      if (trajectories.length === 0) {
-        showFeedback('请先进行签名', 'error');
-        return;
+        // 重置变换矩阵，避免缩放累积
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // 应用设备像素比缩放
+        ctx.scale(dpr, dpr);
+        
+        scheduleRedraw();
       }
-      const compressedData = compressData(trajectories);
-      logError("原始 jsonData 长度: " + compressedData.length);
-      try {
-        Telegram.WebApp.sendData(compressedData);
-        showFeedback('轨迹已发送到 Telegram', 'success');
-      } catch (e) {
-        logError("sendData 错误: " + e.toString());
-        showFeedback("发送失败: " + e.toString(), "error");
+
+      // 优化的重绘调度
+      function scheduleRedraw() {
+        if (!needsRedraw) {
+          needsRedraw = true;
+          requestAnimationFrame(() => {
+            redraw();
+            needsRedraw = false;
+          });
+        }
       }
-    }
 
-    // 绑定发送按钮事件
-    document.getElementById('sendButton').addEventListener('click', sendDataToBot);
+      // 获取触摸/鼠标坐标，并加入压力信息
+      function getCanvasCoords(evt) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        return {
+          x: (evt.clientX - rect.left) * (canvas.width / (rect.width * dpr)),
+          y: (evt.clientY - rect.top) * (canvas.height / (rect.height * dpr)),
+          p: evt.pressure !== undefined ? evt.pressure : 1
+          // timestamp: Date.now()
+        };
+      }
 
-    /********************
-     * Telegram mini app 初始化
-     ********************/
-    document.addEventListener('DOMContentLoaded', () => {
-      Telegram.WebApp.ready();
-    });
+      // 优化的重绘函数
+      function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const drawStrokes = (strokes) => {
+          strokes.forEach(stroke => {
+            if (stroke.length < 2) return;
+
+            ctx.beginPath();
+            ctx.moveTo(stroke[0].x, stroke[0].y);
+
+            for (let i = 1; i < stroke.length; i++) {
+              const p1 = stroke[i - 1];
+              const p2 = stroke[i];
+
+              // 根据压力值调整线宽
+              ctx.lineWidth = Math.max(1, Math.min(3, p2.pressure * 3));
+              ctx.strokeStyle = `rgba(51, 51, 51, ${Math.min(1, p2.pressure + 0.2)})`;
+
+              if (i === 1) {
+                ctx.moveTo(p1.x, p1.y);
+              }
+
+              // 使用二次贝塞尔曲线实现平滑
+              const xc = (p1.x + p2.x) / 2;
+              const yc = (p1.y + p2.y) / 2;
+              ctx.quadraticCurveTo(p1.x, p1.y, xc, yc);
+            }
+
+            ctx.stroke();
+          });
+        };
+
+        drawStrokes(trajectories);
+        if (currentStroke.length > 0) {
+          drawStrokes([currentStroke]);
+        }
+      }
+
+      // 开始绘制
+      function startDrawing(evt) {
+        evt.preventDefault();
+        drawing = true;
+        currentStroke = [];
+        const point = getCanvasCoords(evt);
+        currentStroke.push(point);
+        lastPoint = point;
+        lastTime = Date.now();
+      }
+
+      // 继续绘制
+      function continueDrawing(evt) {
+        if (!drawing) return;
+        evt.preventDefault();
+
+        const now = Date.now();
+        if (now - lastTime < THROTTLE_MS) return;
+
+        const point = getCanvasCoords(evt);
+        currentStroke.push(point);
+        lastPoint = point;
+        lastTime = now;
+        scheduleRedraw();
+      }
+
+      // 结束绘制
+      function endDrawing(evt) {
+        if (!drawing) return;
+        evt.preventDefault();
+        drawing = false;
+
+        if (currentStroke.length > 0) {
+          trajectories.push(currentStroke);
+          currentStroke = [];
+          updateButtons();
+        }
+      }
+
+      // 更新按钮状态
+      function updateButtons() {
+        const hasStrokes = trajectories.length > 0;
+        clearButton.disabled = !hasStrokes;
+        sendButton.disabled = !hasStrokes;
+      }
+
+      // 显示反馈信息
+      function showFeedback(message, type) {
+        feedback.textContent = message;
+        feedback.className = `feedback ${type} show`;
+        statusIndicator.textContent = type === 'error' ? '' : message;
+
+        setTimeout(() => {
+          feedback.classList.remove('show');
+        }, 3000);
+      }
+
+      // 压缩数据
+      function compressData(data) {
+        try {
+          if (!SignatureMessage) {
+            throw new Error('Protobuf 未初始化');
+          }
+
+          // 转换数据格式
+          const protoData = {
+            d: data.device_id,
+            s: data.trajectories.map(stroke => ({
+              points: stroke.map(point => ({
+                x: Math.round(point.x * 10) / 10,  // 保留一位小数
+                y: Math.round(point.y * 10) / 10,
+                p: Math.round(point.p * 10) / 10
+              }))
+            }))
+          };
+
+          // 验证数据
+          const errMsg = SignatureMessage.verify(protoData);
+          if (errMsg) throw Error(errMsg);
+          // 创建消息实例
+          const message = SignatureMessage.create(protoData);          
+          // 编码
+          const buffer = SignatureMessage.encode(message).finish();          
+          // 压缩
+          const compressed = pako.deflate(buffer);          
+          // Base64编码
+          return Base64.fromUint8Array(compressed)
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+        } catch (e) {
+          console.error('压缩数据失败:', e);
+          throw e;
+        }
+      }
+
+      // 发送数据到 Bot
+      async function sendDataToBot() {
+        if (trajectories.length === 0) {
+          showFeedback('请先进行签名', 'error');
+          return;
+        }
+
+        try {
+          sendButton.disabled = true;
+          const initData = Telegram.WebApp.initData;
+          const params = new URLSearchParams(initData);
+          const deviceId = params.get("device_id");
+
+          const signatureData = {
+            device_id: deviceId,
+            trajectories: trajectories
+          };
+
+          const compressedData = compressData(signatureData);
+          
+          // 检查数据大小
+          if (compressedData.length > 4096) {
+            showFeedback('签名过于复杂，请简化后重试', 'error');
+            return;
+          }
+
+          Telegram.WebApp.sendData(compressedData);
+          showFeedback('签名已成功发送', 'success');
+        } catch (e) {
+          console.error('发送数据失败:', e);
+          showFeedback('发送失败，请重试', 'error');
+        } finally {
+          sendButton.disabled = false;
+        }
+      }
+
+      // 清除画板
+      function clearCanvas() {
+        trajectories = [];
+        currentStroke = [];
+        updateButtons();
+        scheduleRedraw();
+        showFeedback('画板已清空', 'success');
+      }
+
+      // 事件监听
+      canvas.addEventListener('pointerdown', startDrawing, { passive: false });
+      canvas.addEventListener('pointermove', continueDrawing, { passive: false });
+      canvas.addEventListener('pointerup', endDrawing, { passive: false });
+      canvas.addEventListener('pointercancel', endDrawing, { passive: false });
+      canvas.addEventListener('pointerleave', endDrawing, { passive: false });
+
+      clearButton.addEventListener('click', clearCanvas);
+      sendButton.addEventListener('click', sendDataToBot);
+
+      window.addEventListener('resize', resizeCanvas);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', initTelegramWebApp);
+
+      // 初始化
+      Promise.all([
+        initProtobuf(),
+        initTelegramWebApp()
+      ]).then(() => {
+        resizeCanvas();
+        updateButtons();
+      });
+    })();
   </script>
 </body>
 
