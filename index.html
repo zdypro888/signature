@@ -521,7 +521,7 @@
             sendButton.disabled = true;
             const initData = Telegram.WebApp.initData;
             const params = new URLSearchParams(initData);
-            const deviceId = params.get("device_id");
+            let deviceId = params.get("device_id");
             if (!deviceId) {
               const queryString = window.location.search;
               const params = new URLSearchParams(queryString);
