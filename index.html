@@ -52,7 +52,6 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      touch-action: none;
     }
 
     /* 居中容器 */
@@ -599,12 +598,12 @@
         window.addEventListener('resize', resizeCanvas);
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', initTelegramWebApp);
 
-        // 阻止默认的触摸行为
-        document.addEventListener('touchmove', function(e) {
+        // 只在画布上阻止默认行为
+        canvas.addEventListener('touchmove', function(e) {
           e.preventDefault();
         }, { passive: false });
 
-        document.addEventListener('touchstart', function(e) {
+        canvas.addEventListener('touchstart', function(e) {
           e.preventDefault();
         }, { passive: false });
 
