@@ -2,149 +2,150 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <!-- 使页面自适应移动设备 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 设置 viewport，并增加 viewport-fit=cover 以充分利用屏幕空间 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>智能签名系统</title>
   <!-- Telegram Web App JS，用于 Telegram mini app 环境 -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- 引入 lz-string 压缩库 -->
+  <!-- 引入 LZString 库用于数据压缩（当数据过长时） -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
   <style>
-    /* 重置样式 */
-    * {
-      box-sizing: border-box;
+    /* 全局重置与防止滚动 */
+    html, body {
+      height: 100%;
       margin: 0;
       padding: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: linear-gradient(135deg, #a8e063, #56ab2f);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
+    
+    /* 居中容器 */
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: 20px;
     }
+    
+    /* 卡片式容器 */
     .container {
-      background: #ffffff;
+      background: #fff;
       border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-      width: 100%;
-      max-width: 800px;
-      padding: 30px;
-      transition: all 0.3s ease;
-    }
-    .container:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
-    }
-    h2 {
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      width: 90%;
+      max-width: 600px;
+      padding: 20px;
       text-align: center;
-      margin-bottom: 25px;
-      color: #2c3e50;
-      font-size: 28px;
+      position: relative;
+    }
+    
+    .container h2 {
+      margin-top: 0;
+      color: #333;
+      font-size: 26px;
       font-weight: 600;
     }
+    
+    /* 签名画板区域 */
     .canvas-container {
-      position: relative;
-      margin-bottom: 20px;
+      margin: 20px 0;
+      border: 1px solid #ddd;
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      background: #fafafa;
     }
+    
     canvas {
       width: 100%;
       height: auto;
-      background: #fff;
-      border: 2px solid #e0e0e0;
-      border-radius: 12px;
       touch-action: none;
+      display: block;
     }
-    .drawing-tips {
-      text-align: center;
-      margin-top: 10px;
-      color: #666;
-      font-size: 14px;
-      font-style: italic;
-    }
+    
+    /* 按钮区域：使用自定义按钮 */
     .buttons {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
       gap: 15px;
-      margin-top: 20px;
     }
-    button {
-      padding: 12px 20px;
+    
+    .buttons button {
+      padding: 12px 24px;
       font-size: 16px;
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      font-weight: 500;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
+      transition: background 0.3s;
     }
-    button:active {
-      transform: scale(0.98);
-    }
+    
     #clearButton {
       background: #ff6b6b;
-      color: white;
+      color: #fff;
     }
+    
     #clearButton:hover {
       background: #ff5252;
     }
-    #exportButton {
-      background: #4ecdc4;
-      color: white;
-    }
-    #exportButton:hover {
-      background: #45b7af;
-    }
+    
     #sendButton {
       background: #6c5ce7;
-      color: white;
+      color: #fff;
     }
+    
     #sendButton:hover {
       background: #5f3dc4;
     }
+    
+    /* 反馈提示 */
     .feedback {
       position: fixed;
       top: 20px;
       right: 20px;
-      padding: 15px 25px;
+      padding: 12px 20px;
       border-radius: 8px;
-      color: white;
-      font-weight: 500;
-      transform: translateX(150%);
-      transition: transform 0.3s ease;
+      color: #fff;
+      font-weight: bold;
+      opacity: 0;
+      transform: translateX(100%);
+      transition: all 0.3s;
       z-index: 1000;
     }
+    
+    .feedback.show {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    
     .feedback.success {
       background: #00b894;
-      transform: translateX(0);
     }
+    
     .feedback.error {
       background: #d63031;
-      transform: translateX(0);
     }
+    
+    /* 状态提示 */
     .status-indicator {
-      text-align: center;
-      margin-top: 15px;
-      font-size: 14px;
+      margin-top: 10px;
       color: #666;
+      font-size: 14px;
     }
-    /* 调试区域样式 */
+    
+    /* 调试日志（生产环境可隐藏） */
     #debugLog {
       position: fixed;
       bottom: 0;
       left: 0;
       width: 100%;
-      background: rgba(255, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.7);
       color: #fff;
       font-size: 12px;
       padding: 5px;
       z-index: 9999;
+      box-sizing: border-box;
+      display: none;
     }
   </style>
 </head>
@@ -154,10 +155,8 @@
     <div class="canvas-container">
       <canvas id="signatureCanvas"></canvas>
     </div>
-    <div class="drawing-tips">请在上方区域书写签名</div>
     <div class="buttons">
       <button id="clearButton">清除</button>
-      <button id="exportButton">导出轨迹</button>
       <button id="sendButton">发送轨迹</button>
     </div>
     <div class="status-indicator" id="statusIndicator"></div>
@@ -167,16 +166,18 @@
   <div id="debugLog"></div>
 
   <script>
-    // 获取 canvas 对象与上下文
+    /********************
+     * 签名绘制相关代码
+     ********************/
     const canvas = document.getElementById('signatureCanvas');
     const ctx = canvas.getContext('2d');
-
-    // 全局变量
-    let trajectories = [];    // 保存所有笔画（每个笔画为点数组，每个点记录 {x, y, time}）
-    let currentStroke = [];   // 当前正在绘制的笔画
-    let drawing = false;      // 绘制状态
-    let needsRedraw = false;  // 节流重绘标记
-
+    
+    // 保存所有笔画（每笔为一系列点）
+    let trajectories = [];
+    let currentStroke = [];
+    let drawing = false;
+    let needsRedraw = false;
+    
     // 根据容器宽度自适应调整 canvas 尺寸（采用 16:10 比例）
     function resizeCanvas() {
       const containerWidth = canvas.parentElement.clientWidth;
@@ -186,7 +187,7 @@
     }
     window.addEventListener('resize', resizeCanvas);
     document.addEventListener('DOMContentLoaded', resizeCanvas);
-
+    
     // 利用 requestAnimationFrame 节流重绘
     function scheduleRedraw() {
       if (!needsRedraw) {
@@ -197,8 +198,8 @@
         });
       }
     }
-
-    // 获取 canvas 内坐标，同时附加时间戳
+    
+    // 获取 canvas 内坐标，并附加时间戳
     function getCanvasCoords(evt) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -207,27 +208,24 @@
         time: Date.now()
       };
     }
-
-    // 重绘所有笔画：先清空画布，再绘制已完成的笔画和当前笔画
+    
+    // 重绘所有笔画：清空画布后重绘已完成和当前笔画
     function redraw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // 设置绘制样式
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.strokeStyle = '#333';
-
+      
       trajectories.forEach(stroke => drawStroke(stroke));
       if (currentStroke.length > 0) {
         drawStroke(currentStroke);
       }
     }
-
-    // 使用三阶贝塞尔曲线平滑绘制笔画（采用 Catmull-Rom 转 cubic Bezier 的方法）
+    
+    // 利用贝塞尔曲线平滑绘制笔画
     function drawStroke(stroke) {
       if (!stroke || stroke.length === 0) return;
-
-      // 如果只有一个点，则绘制一个小圆点
       if (stroke.length < 2) {
         const p = stroke[0];
         ctx.beginPath();
@@ -235,20 +233,13 @@
         ctx.fill();
         return;
       }
-
       ctx.beginPath();
       ctx.moveTo(stroke[0].x, stroke[0].y);
-
-      // 遍历每一段，使用前后点来计算控制点
       for (let i = 0; i < stroke.length - 1; i++) {
-        // 如果是起始段，令 p0 等于第一个点
         const p0 = (i === 0) ? stroke[0] : stroke[i - 1];
         const p1 = stroke[i];
         const p2 = stroke[i + 1];
-        // 对于终点段，令 p3 等于 p2
         const p3 = (i + 2 < stroke.length) ? stroke[i + 2] : p2;
-
-        // 根据 Catmull-Rom 转 cubic Bezier 的公式计算控制点
         const cp1 = {
           x: p1.x + (p2.x - p0.x) / 6,
           y: p1.y + (p2.y - p0.y) / 6
@@ -257,13 +248,11 @@
           x: p2.x - (p3.x - p1.x) / 6,
           y: p2.y - (p3.y - p1.y) / 6
         };
-
         ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
       }
-
       ctx.stroke();
     }
-
+    
     // 开始绘制：记录第一个点
     function startDrawing(evt) {
       evt.preventDefault();
@@ -272,7 +261,7 @@
       currentStroke.push(getCanvasCoords(evt));
       scheduleRedraw();
     }
-
+    
     // 绘制过程中记录点
     function continueDrawing(evt) {
       if (!drawing) return;
@@ -280,7 +269,7 @@
       currentStroke.push(getCanvasCoords(evt));
       scheduleRedraw();
     }
-
+    
     // 结束绘制：保存当前笔画，并重置状态
     function endDrawing(evt) {
       if (!drawing) return;
@@ -290,82 +279,63 @@
       currentStroke = [];
       scheduleRedraw();
     }
-
-    // 使用 Pointer 事件统一处理各种输入（鼠标、触摸、手写笔）
+    
+    // 绑定 Pointer 事件（支持鼠标、触摸及手写笔）
     canvas.addEventListener('pointerdown', startDrawing);
     canvas.addEventListener('pointermove', continueDrawing);
     canvas.addEventListener('pointerup', endDrawing);
     canvas.addEventListener('pointercancel', endDrawing);
     canvas.addEventListener('pointerleave', endDrawing);
-
-    // 反馈提示函数（成功或错误提示）
+    
+    /********************
+     * 反馈与调试
+     ********************/
     function showFeedback(message, type) {
       const feedback = document.getElementById('feedback');
       const statusIndicator = document.getElementById('statusIndicator');
       feedback.textContent = message;
-      feedback.className = `feedback ${type}`;
+      feedback.className = `feedback ${type} show`;
       statusIndicator.textContent = message;
-      // 3秒后隐藏反馈
       setTimeout(() => {
-        feedback.className = 'feedback';
+        feedback.classList.remove('show');
         if (type === 'error') {
           statusIndicator.textContent = '';
         }
       }, 3000);
     }
-
-    // 定义 logError 函数，将错误信息写入页面上的调试区域
+    
     function logError(msg) {
       const debugLog = document.getElementById("debugLog");
       if (debugLog) {
         debugLog.textContent = msg;
       }
     }
-
-    // 清除按钮处理：清空所有轨迹、重绘画布并更新状态提示
+    
+    /********************
+     * 按钮功能
+     ********************/
+    // 清除按钮：清空画板及签名数据
     document.getElementById('clearButton').addEventListener('click', () => {
       trajectories = [];
       currentStroke = [];
       redraw();
       document.getElementById('statusIndicator').textContent = '画板已清空';
     });
-
-    // 导出按钮处理（非 Telegram 环境下有效）
-    document.getElementById('exportButton').addEventListener('click', () => {
+    
+    // 发送按钮：将签名数据通过 Telegram API 发送给 Bot 服务端
+    function sendDataToBot() {
       if (trajectories.length === 0) {
         showFeedback('请先进行签名', 'error');
         return;
       }
-      const data = {
-        trajectories: trajectories,
-        exportedAt: new Date().toISOString()
-      };
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", "signature_trajectories.json");
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
-      showFeedback('轨迹已成功导出', 'success');
-    });
-
-    // 发送按钮处理：在 Telegram mini app 下使用 Telegram.WebApp.sendData，否则使用 fetch 提交数据
-    document.getElementById('sendButton').addEventListener('click', async () => {
-      if (trajectories.length === 0) {
-        showFeedback('请先进行签名', 'error');
-        return;
-      }
-      // 生成数据对象并转换为 JSON 字符串
       const data = {
         trajectories: trajectories,
         exportedAt: new Date().toISOString()
       };
       let jsonData = JSON.stringify(data);
-      // 输出数据长度方便调试
       logError("原始 jsonData 长度: " + jsonData.length);
       
-      // 如果超过 4096 字符，尝试使用 lz-string 压缩数据
+      // 如果数据超过 4096 个字符，则尝试压缩
       if (jsonData.length > 4096) {
         const compressed = LZString.compressToEncodedURIComponent(jsonData);
         logError("压缩后数据长度: " + compressed.length);
@@ -377,43 +347,24 @@
           return;
         }
       }
-
-      // 如果处于 Telegram 环境，调用 Telegram.WebApp.sendData 发送数据
-      if (window.Telegram && Telegram.WebApp) {
-        try {
-          Telegram.WebApp.sendData(jsonData);
-          showFeedback('轨迹已发送到 Telegram', 'success');
-        } catch (e) {
-          logError("sendData 错误: " + e.toString());
-          showFeedback("发送失败: " + e.toString(), "error");
-        }
-      } else {
-        // 非 Telegram 环境下，可使用 fetch 提交数据到后端
-        try {
-          const resp = await fetch('/trajectories', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: jsonData,
-          });
-          if (resp.ok) {
-            showFeedback('轨迹发送成功！', 'success');
-          } else {
-            showFeedback('轨迹发送失败，请重试', 'error');
-          }
-        } catch (error) {
-          logError("fetch 错误: " + error.toString());
-          showFeedback('网络错误，请检查连接', 'error');
-        }
+      
+      try {
+        Telegram.WebApp.sendData(jsonData);
+        showFeedback('轨迹已发送到 Telegram', 'success');
+      } catch (e) {
+        logError("sendData 错误: " + e.toString());
+        showFeedback("发送失败: " + e.toString(), "error");
       }
-    });
-
-    // 页面加载完毕后，如果检测到 Telegram mini app 环境，则隐藏导出按钮
+    }
+    
+    // 绑定发送按钮事件
+    document.getElementById('sendButton').addEventListener('click', sendDataToBot);
+    
+    /********************
+     * Telegram mini app 初始化
+     ********************/
     document.addEventListener('DOMContentLoaded', () => {
-      if (window.Telegram && Telegram.WebApp) {
-        document.getElementById('exportButton').style.display = 'none';
-        // 通知 Telegram 小程序已就绪
-        Telegram.WebApp.ready();
-      }
+      Telegram.WebApp.ready();
     });
   </script>
 </body>
