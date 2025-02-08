@@ -9,12 +9,10 @@
   <title>智能签名系统</title>
   <!-- Telegram Web App JS，用于 Telegram mini app 环境 -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- 引入 pako 库 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js" defer></script>
-  <!-- 引入 js-base64 库 -->
-  <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.7/base64.min.js" defer></script>
-  <!-- 引入 protobuf.js -->
-  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.2.4/dist/protobuf.min.js" defer></script>
+  <!-- 引入依赖库 -->
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.7/base64.min.js"></script>
   <style>
     :root {
       --primary-color: #6c5ce7;
@@ -93,7 +91,7 @@
       border: 2px solid #eee;
       border-radius: calc(var(--border-radius) - 4px);
       overflow: hidden;
-      background: #fafafa;
+      background: #ffffff;
       position: relative;
     }
 
@@ -114,6 +112,7 @@
       height: auto;
       touch-action: none;
       display: block;
+      background: #ffffff;
     }
 
     /* 按钮区域：使用自定义按钮 */
@@ -238,7 +237,6 @@
 
       .canvas-container {
         border-color: #333;
-        background: #222;
       }
 
       .canvas-container::before {
@@ -269,314 +267,317 @@
   <div id="debugLog"></div>
 
   <script>
-    // 使用立即执行函数避免全局变量污染
-    (() => {
-      // 定义 protobuf 消息格式
-      const SignatureProto = `
-        syntax = "proto3";
-        
-        message Point {
-          float x = 1;
-          float y = 2;
-          float p = 3;
+    // 等待所有依赖加载完成
+    window.addEventListener('load', async () => {
+      // 使用立即执行函数避免全局变量污染
+      (() => {
+        // 定义 protobuf 消息格式
+        const SignatureProto = `
+          syntax = "proto3";
+          
+          message Point {
+            float x = 1;
+            float y = 2;
+            float p = 3;
+          }
+          
+          message Stroke {
+            repeated Point points = 1;
+          }
+          
+          message Signature {
+            string d = 1;  // device_id
+            repeated Stroke s = 2;  // strokes
+          }
+        `;
+
+        let root = null;
+        let SignatureMessage = null;
+
+        // 初始化 protobuf
+        async function initProtobuf() {
+          try {
+            root = await protobuf.parse(SignatureProto).root;
+            SignatureMessage = root.lookupType("Signature");
+          } catch (e) {
+            console.error('Protobuf 初始化失败:', e);
+          }
         }
-        
-        message Stroke {
-          repeated Point points = 1;
+
+        const canvas = document.getElementById('signatureCanvas');
+        const ctx = canvas.getContext('2d');
+        const feedback = document.getElementById('feedback');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const clearButton = document.getElementById('clearButton');
+        const sendButton = document.getElementById('sendButton');
+
+        let trajectories = [];
+        let currentStroke = [];
+        let drawing = false;
+        let needsRedraw = false;
+        let lastPoint = null;
+        let lastTime = 0;
+        const THROTTLE_MS = 16; // ~60fps
+
+        // 初始化 Telegram WebApp
+        function initTelegramWebApp() {
+          if (window.Telegram?.WebApp) {
+            Telegram.WebApp.ready();
+            // 设置主题颜色
+            const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            Telegram.WebApp.setHeaderColor(isDarkMode ? '#1a1a1a' : '#ffffff');
+            Telegram.WebApp.setBackgroundColor(isDarkMode ? '#000000' : '#ffffff');
+          }
         }
-        
-        message Signature {
-          string d = 1;  // device_id
-          repeated Stroke s = 2;  // strokes
+
+        // 优化的 Canvas 大小调整
+        function resizeCanvas() {
+          const dpr = window.devicePixelRatio || 1;
+          const containerWidth = canvas.parentElement.clientWidth;
+          const displayWidth = containerWidth;
+          const displayHeight = containerWidth * 0.625;
+
+          canvas.style.width = `${displayWidth}px`;
+          canvas.style.height = `${displayHeight}px`;
+          canvas.width = displayWidth * dpr;
+          canvas.height = displayHeight * dpr;
+
+          // 重置变换矩阵，避免缩放累积
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          // 应用设备像素比缩放
+          ctx.scale(dpr, dpr);
+          
+          scheduleRedraw();
         }
-      `;
 
-      let root = null;
-      let SignatureMessage = null;
-
-      // 初始化 protobuf
-      async function initProtobuf() {
-        try {
-          root = await protobuf.parse(SignatureProto).root;
-          SignatureMessage = root.lookupType("Signature");
-        } catch (e) {
-          console.error('Protobuf 初始化失败:', e);
+        // 优化的重绘调度
+        function scheduleRedraw() {
+          if (!needsRedraw) {
+            needsRedraw = true;
+            requestAnimationFrame(() => {
+              redraw();
+              needsRedraw = false;
+            });
+          }
         }
-      }
 
-      const canvas = document.getElementById('signatureCanvas');
-      const ctx = canvas.getContext('2d');
-      const feedback = document.getElementById('feedback');
-      const statusIndicator = document.getElementById('statusIndicator');
-      const clearButton = document.getElementById('clearButton');
-      const sendButton = document.getElementById('sendButton');
-
-      let trajectories = [];
-      let currentStroke = [];
-      let drawing = false;
-      let needsRedraw = false;
-      let lastPoint = null;
-      let lastTime = 0;
-      const THROTTLE_MS = 16; // ~60fps
-
-      // 初始化 Telegram WebApp
-      function initTelegramWebApp() {
-        if (window.Telegram?.WebApp) {
-          Telegram.WebApp.ready();
-          // 设置主题颜色
-          const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          Telegram.WebApp.setHeaderColor(isDarkMode ? '#1a1a1a' : '#ffffff');
-          Telegram.WebApp.setBackgroundColor(isDarkMode ? '#000000' : '#ffffff');
+        // 获取触摸/鼠标坐标，并加入压力信息
+        function getCanvasCoords(evt) {
+          const rect = canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          return {
+            x: (evt.clientX - rect.left) * (canvas.width / (rect.width * dpr)),
+            y: (evt.clientY - rect.top) * (canvas.height / (rect.height * dpr)),
+            p: evt.pressure !== undefined ? evt.pressure : 1
+            // timestamp: Date.now()
+          };
         }
-      }
 
-      // 优化的 Canvas 大小调整
-      function resizeCanvas() {
-        const dpr = window.devicePixelRatio || 1;
-        const containerWidth = canvas.parentElement.clientWidth;
-        const displayWidth = containerWidth;
-        const displayHeight = containerWidth * 0.625;
+        // 优化的重绘函数
+        function redraw() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
 
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        canvas.width = displayWidth * dpr;
-        canvas.height = displayHeight * dpr;
+          const drawStrokes = (strokes) => {
+            strokes.forEach(stroke => {
+              if (stroke.length < 2) return;
 
-        // 重置变换矩阵，避免缩放累积
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        // 应用设备像素比缩放
-        ctx.scale(dpr, dpr);
-        
-        scheduleRedraw();
-      }
+              ctx.beginPath();
+              ctx.moveTo(stroke[0].x, stroke[0].y);
 
-      // 优化的重绘调度
-      function scheduleRedraw() {
-        if (!needsRedraw) {
-          needsRedraw = true;
-          requestAnimationFrame(() => {
-            redraw();
-            needsRedraw = false;
-          });
-        }
-      }
+              for (let i = 1; i < stroke.length; i++) {
+                const p1 = stroke[i - 1];
+                const p2 = stroke[i];
 
-      // 获取触摸/鼠标坐标，并加入压力信息
-      function getCanvasCoords(evt) {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        return {
-          x: (evt.clientX - rect.left) * (canvas.width / (rect.width * dpr)),
-          y: (evt.clientY - rect.top) * (canvas.height / (rect.height * dpr)),
-          p: evt.pressure !== undefined ? evt.pressure : 1
-          // timestamp: Date.now()
-        };
-      }
+                // 根据压力值调整线宽
+                ctx.lineWidth = Math.max(1, Math.min(3, p2.pressure * 3));
+                ctx.strokeStyle = `rgba(51, 51, 51, ${Math.min(1, p2.pressure + 0.2)})`;
 
-      // 优化的重绘函数
-      function redraw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
+                if (i === 1) {
+                  ctx.moveTo(p1.x, p1.y);
+                }
 
-        const drawStrokes = (strokes) => {
-          strokes.forEach(stroke => {
-            if (stroke.length < 2) return;
-
-            ctx.beginPath();
-            ctx.moveTo(stroke[0].x, stroke[0].y);
-
-            for (let i = 1; i < stroke.length; i++) {
-              const p1 = stroke[i - 1];
-              const p2 = stroke[i];
-
-              // 根据压力值调整线宽
-              ctx.lineWidth = Math.max(1, Math.min(3, p2.pressure * 3));
-              ctx.strokeStyle = `rgba(51, 51, 51, ${Math.min(1, p2.pressure + 0.2)})`;
-
-              if (i === 1) {
-                ctx.moveTo(p1.x, p1.y);
+                // 使用二次贝塞尔曲线实现平滑
+                const xc = (p1.x + p2.x) / 2;
+                const yc = (p1.y + p2.y) / 2;
+                ctx.quadraticCurveTo(p1.x, p1.y, xc, yc);
               }
 
-              // 使用二次贝塞尔曲线实现平滑
-              const xc = (p1.x + p2.x) / 2;
-              const yc = (p1.y + p2.y) / 2;
-              ctx.quadraticCurveTo(p1.x, p1.y, xc, yc);
+              ctx.stroke();
+            });
+          };
+
+          drawStrokes(trajectories);
+          if (currentStroke.length > 0) {
+            drawStrokes([currentStroke]);
+          }
+        }
+
+        // 开始绘制
+        function startDrawing(evt) {
+          evt.preventDefault();
+          drawing = true;
+          currentStroke = [];
+          const point = getCanvasCoords(evt);
+          currentStroke.push(point);
+          lastPoint = point;
+          lastTime = Date.now();
+        }
+
+        // 继续绘制
+        function continueDrawing(evt) {
+          if (!drawing) return;
+          evt.preventDefault();
+
+          const now = Date.now();
+          if (now - lastTime < THROTTLE_MS) return;
+
+          const point = getCanvasCoords(evt);
+          currentStroke.push(point);
+          lastPoint = point;
+          lastTime = now;
+          scheduleRedraw();
+        }
+
+        // 结束绘制
+        function endDrawing(evt) {
+          if (!drawing) return;
+          evt.preventDefault();
+          drawing = false;
+
+          if (currentStroke.length > 0) {
+            trajectories.push(currentStroke);
+            currentStroke = [];
+            updateButtons();
+          }
+        }
+
+        // 更新按钮状态
+        function updateButtons() {
+          const hasStrokes = trajectories.length > 0;
+          clearButton.disabled = !hasStrokes;
+          sendButton.disabled = !hasStrokes;
+        }
+
+        // 显示反馈信息
+        function showFeedback(message, type) {
+          feedback.textContent = message;
+          feedback.className = `feedback ${type} show`;
+          statusIndicator.textContent = type === 'error' ? '' : message;
+
+          setTimeout(() => {
+            feedback.classList.remove('show');
+          }, 3000);
+        }
+
+        // 压缩数据
+        function compressData(data) {
+          try {
+            if (!SignatureMessage) {
+              throw new Error('Protobuf 未初始化');
             }
 
-            ctx.stroke();
-          });
-        };
-
-        drawStrokes(trajectories);
-        if (currentStroke.length > 0) {
-          drawStrokes([currentStroke]);
-        }
-      }
-
-      // 开始绘制
-      function startDrawing(evt) {
-        evt.preventDefault();
-        drawing = true;
-        currentStroke = [];
-        const point = getCanvasCoords(evt);
-        currentStroke.push(point);
-        lastPoint = point;
-        lastTime = Date.now();
-      }
-
-      // 继续绘制
-      function continueDrawing(evt) {
-        if (!drawing) return;
-        evt.preventDefault();
-
-        const now = Date.now();
-        if (now - lastTime < THROTTLE_MS) return;
-
-        const point = getCanvasCoords(evt);
-        currentStroke.push(point);
-        lastPoint = point;
-        lastTime = now;
-        scheduleRedraw();
-      }
-
-      // 结束绘制
-      function endDrawing(evt) {
-        if (!drawing) return;
-        evt.preventDefault();
-        drawing = false;
-
-        if (currentStroke.length > 0) {
-          trajectories.push(currentStroke);
-          currentStroke = [];
-          updateButtons();
-        }
-      }
-
-      // 更新按钮状态
-      function updateButtons() {
-        const hasStrokes = trajectories.length > 0;
-        clearButton.disabled = !hasStrokes;
-        sendButton.disabled = !hasStrokes;
-      }
-
-      // 显示反馈信息
-      function showFeedback(message, type) {
-        feedback.textContent = message;
-        feedback.className = `feedback ${type} show`;
-        statusIndicator.textContent = type === 'error' ? '' : message;
-
-        setTimeout(() => {
-          feedback.classList.remove('show');
-        }, 3000);
-      }
-
-      // 压缩数据
-      function compressData(data) {
-        try {
-          if (!SignatureMessage) {
-            throw new Error('Protobuf 未初始化');
-          }
-
-          // 转换数据格式
-          const protoData = {
-            d: data.device_id,
-            s: data.trajectories.map(stroke => ({
-              points: stroke.map(point => ({
-                x: Math.round(point.x * 10) / 10,  // 保留一位小数
-                y: Math.round(point.y * 10) / 10,
-                p: Math.round(point.p * 10) / 10
+            // 转换数据格式
+            const protoData = {
+              d: data.device_id,
+              s: data.trajectories.map(stroke => ({
+                points: stroke.map(point => ({
+                  x: Math.round(point.x * 10) / 10,  // 保留一位小数
+                  y: Math.round(point.y * 10) / 10,
+                  p: Math.round(point.p * 10) / 10
+                }))
               }))
-            }))
-          };
+            };
 
-          // 验证数据
-          const errMsg = SignatureMessage.verify(protoData);
-          if (errMsg) throw Error(errMsg);
-          // 创建消息实例
-          const message = SignatureMessage.create(protoData);          
-          // 编码
-          const buffer = SignatureMessage.encode(message).finish();          
-          // 压缩
-          const compressed = pako.deflate(buffer);          
-          // Base64编码
-          return Base64.fromUint8Array(compressed)
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-        } catch (e) {
-          console.error('压缩数据失败:', e);
-          throw e;
-        }
-      }
-
-      // 发送数据到 Bot
-      async function sendDataToBot() {
-        if (trajectories.length === 0) {
-          showFeedback('请先进行签名', 'error');
-          return;
+            // 验证数据
+            const errMsg = SignatureMessage.verify(protoData);
+            if (errMsg) throw Error(errMsg);
+            // 创建消息实例
+            const message = SignatureMessage.create(protoData);          
+            // 编码
+            const buffer = SignatureMessage.encode(message).finish();          
+            // 压缩
+            const compressed = pako.deflate(buffer);          
+            // Base64编码
+            return Base64.fromUint8Array(compressed)
+              .replace(/\+/g, '-')
+              .replace(/\//g, '_')
+              .replace(/=+$/, '');
+          } catch (e) {
+            console.error('压缩数据失败:', e);
+            throw e;
+          }
         }
 
-        try {
-          sendButton.disabled = true;
-          const initData = Telegram.WebApp.initData;
-          const params = new URLSearchParams(initData);
-          const deviceId = params.get("device_id");
-
-          const signatureData = {
-            device_id: deviceId,
-            trajectories: trajectories
-          };
-
-          const compressedData = compressData(signatureData);
-          
-          // 检查数据大小
-          if (compressedData.length > 4096) {
-            showFeedback('签名过于复杂，请简化后重试', 'error');
+        // 发送数据到 Bot
+        async function sendDataToBot() {
+          if (trajectories.length === 0) {
+            showFeedback('请先进行签名', 'error');
             return;
           }
 
-          Telegram.WebApp.sendData(compressedData);
-          showFeedback('签名已成功发送', 'success');
-        } catch (e) {
-          console.error('发送数据失败:', e);
-          showFeedback('发送失败，请重试', 'error');
-        } finally {
-          sendButton.disabled = false;
+          try {
+            sendButton.disabled = true;
+            const initData = Telegram.WebApp.initData;
+            const params = new URLSearchParams(initData);
+            const deviceId = params.get("device_id");
+
+            const signatureData = {
+              device_id: deviceId,
+              trajectories: trajectories
+            };
+
+            const compressedData = compressData(signatureData);
+            
+            // 检查数据大小
+            if (compressedData.length > 4096) {
+              showFeedback('签名过于复杂，请简化后重试', 'error');
+              return;
+            }
+
+            Telegram.WebApp.sendData(compressedData);
+            showFeedback('签名已成功发送', 'success');
+          } catch (e) {
+            console.error('发送数据失败:', e);
+            showFeedback('发送失败，请重试', 'error');
+          } finally {
+            sendButton.disabled = false;
+          }
         }
-      }
 
-      // 清除画板
-      function clearCanvas() {
-        trajectories = [];
-        currentStroke = [];
-        updateButtons();
-        scheduleRedraw();
-        showFeedback('画板已清空', 'success');
-      }
+        // 清除画板
+        function clearCanvas() {
+          trajectories = [];
+          currentStroke = [];
+          updateButtons();
+          scheduleRedraw();
+          showFeedback('画板已清空', 'success');
+        }
 
-      // 事件监听
-      canvas.addEventListener('pointerdown', startDrawing, { passive: false });
-      canvas.addEventListener('pointermove', continueDrawing, { passive: false });
-      canvas.addEventListener('pointerup', endDrawing, { passive: false });
-      canvas.addEventListener('pointercancel', endDrawing, { passive: false });
-      canvas.addEventListener('pointerleave', endDrawing, { passive: false });
+        // 事件监听
+        canvas.addEventListener('pointerdown', startDrawing, { passive: false });
+        canvas.addEventListener('pointermove', continueDrawing, { passive: false });
+        canvas.addEventListener('pointerup', endDrawing, { passive: false });
+        canvas.addEventListener('pointercancel', endDrawing, { passive: false });
+        canvas.addEventListener('pointerleave', endDrawing, { passive: false });
 
-      clearButton.addEventListener('click', clearCanvas);
-      sendButton.addEventListener('click', sendDataToBot);
+        clearButton.addEventListener('click', clearCanvas);
+        sendButton.addEventListener('click', sendDataToBot);
 
-      window.addEventListener('resize', resizeCanvas);
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', initTelegramWebApp);
+        window.addEventListener('resize', resizeCanvas);
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', initTelegramWebApp);
 
-      // 初始化
-      Promise.all([
-        initProtobuf(),
-        initTelegramWebApp()
-      ]).then(() => {
-        resizeCanvas();
-        updateButtons();
-      });
-    })();
+        // 初始化
+        Promise.all([
+          initProtobuf(),
+          initTelegramWebApp()
+        ]).then(() => {
+          resizeCanvas();
+          updateButtons();
+        });
+      })();
+    });
   </script>
 </body>
 
