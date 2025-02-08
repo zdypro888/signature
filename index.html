@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
   <meta charset="UTF-8">
   <!-- 使页面自适应移动设备 -->
@@ -15,7 +14,6 @@
       margin: 0;
       padding: 0;
     }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
@@ -25,7 +23,6 @@
       min-height: 100vh;
       padding: 20px;
     }
-
     .container {
       background: #ffffff;
       border-radius: 16px;
@@ -35,12 +32,10 @@
       padding: 30px;
       transition: all 0.3s ease;
     }
-
     .container:hover {
       transform: translateY(-2px);
       box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
     }
-
     h2 {
       text-align: center;
       margin-bottom: 25px;
@@ -48,7 +43,6 @@
       font-size: 28px;
       font-weight: 600;
     }
-
     .canvas-container {
       position: relative;
       margin-bottom: 20px;
@@ -56,7 +50,6 @@
       overflow: hidden;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
     }
-
     canvas {
       width: 100%;
       height: auto;
@@ -65,7 +58,6 @@
       border-radius: 12px;
       touch-action: none;
     }
-
     .drawing-tips {
       text-align: center;
       margin-top: 10px;
@@ -73,14 +65,12 @@
       font-size: 14px;
       font-style: italic;
     }
-
     .buttons {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 15px;
       margin-top: 20px;
     }
-
     button {
       padding: 12px 20px;
       font-size: 16px;
@@ -92,38 +82,30 @@
       position: relative;
       overflow: hidden;
     }
-
     button:active {
       transform: scale(0.98);
     }
-
     #clearButton {
       background: #ff6b6b;
       color: white;
     }
-
     #clearButton:hover {
       background: #ff5252;
     }
-
     #exportButton {
       background: #4ecdc4;
       color: white;
     }
-
     #exportButton:hover {
       background: #45b7af;
     }
-
     #sendButton {
       background: #6c5ce7;
       color: white;
     }
-
     #sendButton:hover {
       background: #5f3dc4;
     }
-
     .feedback {
       position: fixed;
       top: 20px;
@@ -136,17 +118,14 @@
       transition: transform 0.3s ease;
       z-index: 1000;
     }
-
     .feedback.success {
       background: #00b894;
       transform: translateX(0);
     }
-
     .feedback.error {
       background: #d63031;
       transform: translateX(0);
     }
-
     .status-indicator {
       text-align: center;
       margin-top: 15px;
@@ -155,7 +134,6 @@
     }
   </style>
 </head>
-
 <body>
   <div class="container">
     <h2>智能签名系统</h2>
@@ -171,6 +149,8 @@
     <div class="status-indicator" id="statusIndicator"></div>
   </div>
   <div class="feedback" id="feedback"></div>
+  <!-- 调试区域，用于显示错误信息 -->
+  <div id="debugLog" style="position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(255,0,0,0.8); color: #fff; font-size: 12px; padding: 5px; z-index: 9999;"></div>
 
   <script>
     // 获取 canvas 对象与上下文
@@ -229,7 +209,6 @@
       }
     }
 
-    // 使用二次贝塞尔曲线平滑绘制笔画
     // 使用三阶贝塞尔曲线平滑绘制笔画（采用 Catmull-Rom 转 cubic Bezier 的方法）
     function drawStroke(stroke) {
       if (!stroke || stroke.length === 0) return;
@@ -321,6 +300,14 @@
       }, 3000);
     }
 
+    // 定义 logError 函数，将错误信息写入页面上的调试区域
+    function logError(msg) {
+      const debugLog = document.getElementById('debugLog');
+      if (debugLog) {
+        debugLog.textContent = msg;
+      }
+    }
+
     // 清除按钮处理：清空所有轨迹、重绘画布并更新状态提示
     document.getElementById('clearButton').addEventListener('click', () => {
       trajectories = [];
@@ -359,12 +346,16 @@
         trajectories: trajectories,
         exportedAt: new Date().toISOString()
       };
-      // 如果处于 Telegram 环境，调用 Telegram.WebApp.sendData 发送数据
       if (window.Telegram && Telegram.WebApp) {
-        Telegram.WebApp.sendData(JSON.stringify(data));
-        showFeedback('轨迹已发送到 Telegram', 'success');
+        try {
+          Telegram.WebApp.sendData(JSON.stringify(data));
+          showFeedback('轨迹已发送到 Telegram', 'success');
+        } catch (e) {
+          // 捕获错误后，使用 logError 将错误显示在页面上
+          logError("sendData 错误: " + e.toString());
+          showFeedback("发送失败: " + e.toString(), "error");
+        }
       } else {
-        // 非 Telegram 环境下，可使用 fetch 提交数据到后端
         try {
           const resp = await fetch('/trajectories', {
             method: 'POST',
@@ -377,6 +368,7 @@
             showFeedback('轨迹发送失败，请重试', 'error');
           }
         } catch (error) {
+          logError("fetch 错误: " + error.toString());
           showFeedback('网络错误，请检查连接', 'error');
         }
       }
@@ -386,11 +378,10 @@
     document.addEventListener('DOMContentLoaded', () => {
       if (window.Telegram && Telegram.WebApp) {
         document.getElementById('exportButton').style.display = 'none';
-        // 可调用 Telegram.WebApp.ready() 通知 Telegram 小程序已就绪
+        // 通知 Telegram 小程序已就绪
         Telegram.WebApp.ready();
       }
     });
   </script>
 </body>
-
 </html>
