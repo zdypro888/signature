@@ -7,6 +7,8 @@
   <title>智能签名系统</title>
   <!-- Telegram Web App JS，用于 Telegram mini app 环境 -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- 引入 lz-string 压缩库 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
   <style>
     /* 重置样式 */
     * {
@@ -132,6 +134,18 @@
       font-size: 14px;
       color: #666;
     }
+    /* 调试区域样式 */
+    #debugLog {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(255, 0, 0, 0.8);
+      color: #fff;
+      font-size: 12px;
+      padding: 5px;
+      z-index: 9999;
+    }
   </style>
 </head>
 <body>
@@ -149,8 +163,8 @@
     <div class="status-indicator" id="statusIndicator"></div>
   </div>
   <div class="feedback" id="feedback"></div>
-  <!-- 调试区域，用于显示错误信息 -->
-  <div id="debugLog" style="position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(255,0,0,0.8); color: #fff; font-size: 12px; padding: 5px; z-index: 9999;"></div>
+  <!-- 调试区域 -->
+  <div id="debugLog"></div>
 
   <script>
     // 获取 canvas 对象与上下文
@@ -302,7 +316,7 @@
 
     // 定义 logError 函数，将错误信息写入页面上的调试区域
     function logError(msg) {
-      const debugLog = document.getElementById('debugLog');
+      const debugLog = document.getElementById("debugLog");
       if (debugLog) {
         debugLog.textContent = msg;
       }
@@ -342,25 +356,44 @@
         showFeedback('请先进行签名', 'error');
         return;
       }
+      // 生成数据对象并转换为 JSON 字符串
       const data = {
         trajectories: trajectories,
         exportedAt: new Date().toISOString()
       };
+      let jsonData = JSON.stringify(data);
+      // 输出数据长度方便调试
+      logError("原始 jsonData 长度: " + jsonData.length);
+      
+      // 如果超过 4096 字符，尝试使用 lz-string 压缩数据
+      if (jsonData.length > 4096) {
+        const compressed = LZString.compressToEncodedURIComponent(jsonData);
+        logError("压缩后数据长度: " + compressed.length);
+        if (compressed.length <= 4096) {
+          jsonData = compressed;
+        } else {
+          showFeedback("数据过长，即使压缩后仍超出限制", "error");
+          logError("数据长度 " + compressed.length + " 超出限制");
+          return;
+        }
+      }
+
+      // 如果处于 Telegram 环境，调用 Telegram.WebApp.sendData 发送数据
       if (window.Telegram && Telegram.WebApp) {
         try {
-          Telegram.WebApp.sendData(JSON.stringify(data));
+          Telegram.WebApp.sendData(jsonData);
           showFeedback('轨迹已发送到 Telegram', 'success');
         } catch (e) {
-          // 捕获错误后，使用 logError 将错误显示在页面上
           logError("sendData 错误: " + e.toString());
           showFeedback("发送失败: " + e.toString(), "error");
         }
       } else {
+        // 非 Telegram 环境下，可使用 fetch 提交数据到后端
         try {
           const resp = await fetch('/trajectories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+            body: jsonData,
           });
           if (resp.ok) {
             showFeedback('轨迹发送成功！', 'success');
